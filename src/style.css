@@ -480,9 +480,9 @@ body,
 .info-panel {
   position: absolute;
   right: 16px;
-  bottom: 16px;
+  bottom: 72px;
   width: min(400px, calc(100% - 32px));
-  max-height: 46%;
+  max-height: 62%;
   overflow: auto;
   background: rgba(255, 255, 255, 0.97);
   border: 1px solid var(--border);
@@ -542,7 +542,7 @@ body,
   margin: 0 0 10px;
   font-size: 1.05rem;
   font-weight: 700;
-  color: var(--text);
+  color: #2f1f12;
   padding-right: 8px;
 }
 
@@ -551,7 +551,7 @@ body,
   margin: 0 0 8px;
   font-size: 0.84rem;
   line-height: 1.5;
-  color: var(--text-secondary);
+  color: #3b2a1c;
 }
 
 .info-notes {
@@ -584,14 +584,14 @@ body,
   margin: 0 0 10px;
   font-size: 0.82rem;
   font-weight: 600;
-  color: var(--accent);
+  color: #5a3a22;
 }
 
 .info-category {
   margin: 0 0 10px;
   font-size: 0.82rem;
   font-weight: 500;
-  color: var(--category);
+  color: #4a2f1a;
 }
 
 .info-category.hidden {
@@ -602,7 +602,7 @@ body,
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.6;
-  color: var(--text-secondary);
+  color: #2f1f12;
 }
 
 /* 交通通达样式 */

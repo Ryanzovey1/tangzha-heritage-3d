@@ -28,10 +28,6 @@
 
     <div id="app" class="hidden">
       <aside class="sidebar">
-        <header class="sidebar__head">
-          <h1>遗存目录</h1>
-        </header>
-
         <details class="mod" open>
           <summary>遗存目录</summary>
           <ul id="site-list" class="site-list"></ul>
@@ -145,7 +141,7 @@
         <div class="map-search-strip">
           <input id="map-search-top" type="text" placeholder="名称、地址或遗存简介" />
           <label class="map-search-strip__history">
-            <span>历史时间（1930）</span>
+            <span id="history-year-label">历史时间（1930）</span>
             <input id="history-year" type="range" min="1900" max="2025" value="1930" />
           </label>
         </div>

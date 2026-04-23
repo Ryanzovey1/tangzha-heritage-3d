@@ -680,6 +680,8 @@ const btnFlyTiles = document.getElementById("btn-fly-tiles");
 const tilesDirInputEl = document.getElementById("tiles-dir-input");
 const tilesSourceStatusEl = document.getElementById("tiles-source-status");
 const topSearchEl = document.getElementById("map-search-top");
+const historyYearEl = document.getElementById("history-year");
+const historyYearLabelEl = document.getElementById("history-year-label");
 const btnTopLogout = document.getElementById("btn-top-logout");
 const btnBatchRouteTiles = document.getElementById("btn-batch-route-tiles");
 const batchRouteStatusEl = document.getElementById("batch-route-status");
@@ -745,13 +747,9 @@ function showSiteInfo(site) {
   infoTitle.textContent = site.name;
   infoAddress.textContent = site.address ? `地址：${site.address}` : "";
   infoProtection.textContent = site.protection ? `保护等级 / 状况：${site.protection}` : "";
-  if (site.internal_notes) {
-    infoNotes.textContent = `内部备注：${site.internal_notes}`;
-    infoNotes.classList.remove("hidden");
-  } else {
-    infoNotes.textContent = "";
-    infoNotes.classList.add("hidden");
-  }
+  // 前端界面不展示内部备注
+  infoNotes.textContent = "";
+  infoNotes.classList.add("hidden");
   infoEra.textContent = site.era ? `年代 / 时期：${site.era}` : "";
   infoCategory.textContent = site.category ? `类型：${site.category}` : "";
   infoCategory.classList.toggle("hidden", !site.category);
@@ -878,19 +876,49 @@ function getListFilters() {
   const q = searchEl.value.trim().toLowerCase();
   const era = filterEraEl.value;
   const cat = filterCategoryEl.value;
-  return { q, era, cat };
+  const year = Number(historyYearEl?.value || 1930);
+  return { q, era, cat, year };
+}
+
+function getEraYearRange(eraText) {
+  const text = String(eraText || "");
+  if (text.includes("清末—民国") || text.includes("清末-民国")) return [1895, 1949];
+  if (text.includes("清末")) return [1895, 1911];
+  if (text.includes("民国")) return [1912, 1949];
+  if (text.includes("近代—当代") || text.includes("近代-当代")) return [1900, 2025];
+  if (text.includes("当代")) return [1949, 2025];
+  if (text.includes("近代")) return [1900, 1949];
+  return [1900, 2025];
+}
+
+function siteMatchesFilters(site, filters) {
+  const { q, era, cat, year } = filters;
+  if (era !== "全部" && site.era !== era) return false;
+  if (cat !== "全部" && site.category !== cat) return false;
+  const [startYear, endYear] = getEraYearRange(site.era);
+  if (Number.isFinite(year) && (year < startYear || year > endYear)) return false;
+  if (!q) return true;
+  const blob = `${site.name} ${site.summary} ${site.era} ${site.category} ${site.address ?? ""} ${site.protection ?? ""}`.toLowerCase();
+  return blob.includes(q);
+}
+
+function applyFilteredEntityVisibility() {
+  const filters = getListFilters();
+  const showPoints = layerPoints.checked;
+  const showLabels = layerLabels.checked;
+  for (const site of heritageSites) {
+    const matched = siteMatchesFilters(site, filters);
+    const point = pointEntityBySiteId.get(site.id);
+    const label = dataSource.entities.getById(`${site.id}-label`);
+    if (point) point.show = showPoints && matched;
+    if (label) label.show = showLabels && matched;
+  }
 }
 
 function renderList() {
-  const { q, era, cat } = getListFilters();
+  const filters = getListFilters();
   siteListEl.innerHTML = "";
-  const items = heritageSites.filter((s) => {
-    if (era !== "全部" && s.era !== era) return false;
-    if (cat !== "全部" && s.category !== cat) return false;
-    if (!q) return true;
-    const blob = `${s.name} ${s.summary} ${s.era} ${s.category} ${s.address ?? ""} ${s.protection ?? ""} ${s.internal_notes ?? ""}`.toLowerCase();
-    return blob.includes(q);
-  });
+  const items = heritageSites.filter((s) => siteMatchesFilters(s, filters));
   for (const site of items) {
     const li = document.createElement("li");
     const btn = document.createElement("button");
@@ -901,6 +929,7 @@ function renderList() {
     li.appendChild(btn);
     siteListEl.appendChild(li);
   }
+  applyFilteredEntityVisibility();
 }
 
 renderList();
@@ -915,6 +944,13 @@ searchEl.addEventListener("input", () => {
 });
 filterEraEl.addEventListener("change", renderList);
 filterCategoryEl.addEventListener("change", renderList);
+historyYearEl?.addEventListener("input", () => {
+  if (historyYearLabelEl) historyYearLabelEl.textContent = `历史时间（${historyYearEl.value}）`;
+  renderList();
+});
+if (historyYearEl && historyYearLabelEl) {
+  historyYearLabelEl.textContent = `历史时间（${historyYearEl.value}）`;
+}
 
 infoClose.addEventListener("click", hideInfo);
 
@@ -1028,17 +1064,11 @@ basemapEl.addEventListener("change", () => {
 });
 
 layerPoints.addEventListener("change", () => {
-  const on = layerPoints.checked;
-  for (const e of pointEntities) {
-    e.show = on;
-  }
+  applyFilteredEntityVisibility();
 });
 
 layerLabels.addEventListener("change", () => {
-  const on = layerLabels.checked;
-  for (const e of labelEntities) {
-    e.show = on;
-  }
+  applyFilteredEntityVisibility();
 });
 
 layerZone?.addEventListener("change", () => {
