@@ -1302,6 +1302,7 @@ function buildCircleGridPoints(center, radiusKm, cellM) {
   const latStepDeg = stepKm / 110.574;
   const latRadiusDeg = radiusKm / 110.574;
   const rowCount = Math.max(1, Math.ceil((latRadiusDeg * 2) / latStepDeg));
+  let idx = 0;
 
   for (let row = 0; row <= rowCount; row++) {
     const lat = center.lat - latRadiusDeg + row * latStepDeg;
@@ -1313,19 +1314,49 @@ function buildCircleGridPoints(center, radiusKm, cellM) {
     const colCount = Math.max(1, Math.ceil((lonRadiusDeg * 2) / lonStepDeg));
     for (let col = 0; col <= colCount; col++) {
       const lon = center.lon - lonRadiusDeg + col * lonStepDeg;
-      points.push({ lon, lat });
+      points.push({ id: `g-${idx++}`, lon, lat, row, col });
     }
   }
   return points;
 }
 
-function colorForTravelDuration(durationS, maxDurationS) {
-  const maxSafe = Math.max(1, Number(maxDurationS || 1));
-  const t = Math.max(0, Math.min(1, Number(durationS || 0) / maxSafe));
-  if (t < 0.25) return Cesium.Color.fromCssColorString("#1c88d1").withAlpha(0.56);
-  if (t < 0.5) return Cesium.Color.fromCssColorString("#6cb8dd").withAlpha(0.5);
-  if (t < 0.75) return Cesium.Color.fromCssColorString("#f2cf6e").withAlpha(0.45);
-  return Cesium.Color.fromCssColorString("#f09b44").withAlpha(0.42);
+function colorForTravelDuration(durationS, minDurationS, maxDurationS) {
+  const minSafe = Number.isFinite(minDurationS) ? minDurationS : 0;
+  const maxSafe = Math.max(minSafe + 1, Number(maxDurationS || 1));
+  const t = Math.max(0, Math.min(1, (Number(durationS || 0) - minSafe) / (maxSafe - minSafe)));
+  // 细化分级：深蓝 -> 蓝 -> 青 -> 黄 -> 橙 -> 红
+  if (t <= 0.08) return Cesium.Color.fromCssColorString("#0b5ea8").withAlpha(0.58);
+  if (t <= 0.2) return Cesium.Color.fromCssColorString("#1e81cf").withAlpha(0.57);
+  if (t <= 0.34) return Cesium.Color.fromCssColorString("#49a6dd").withAlpha(0.56);
+  if (t <= 0.5) return Cesium.Color.fromCssColorString("#83c7d9").withAlpha(0.55);
+  if (t <= 0.66) return Cesium.Color.fromCssColorString("#f2dc7b").withAlpha(0.54);
+  if (t <= 0.8) return Cesium.Color.fromCssColorString("#f4bb61").withAlpha(0.53);
+  if (t <= 0.92) return Cesium.Color.fromCssColorString("#ef9442").withAlpha(0.52);
+  return Cesium.Color.fromCssColorString("#e56a33").withAlpha(0.5);
+}
+
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+async function fetchMatrixRoutesByBatches(destination, origins, onProgress) {
+  const batches = chunkArray(origins, 100);
+  const routes = [];
+  for (let i = 0; i < batches.length; i++) {
+    const part = batches[i];
+    if (onProgress) onProgress(i + 1, batches.length, part.length);
+    const data = await postJsonWithFallback(
+      ["/api/routing/baidu/matrix", "http://localhost:3001/api/routing/baidu/matrix"],
+      { mode: "driving", coord_type: "wgs84", destination, origins: part },
+    );
+    const rows = Array.isArray(data?.routes) ? data.routes : [];
+    routes.push(...rows);
+  }
+  return routes;
 }
 
 function clearTimespaceRingEntities() {
@@ -1422,16 +1453,23 @@ async function runSearchCommercialNearby() {
 
 function renderTimespaceHeatAndRings(center, routes, cellM) {
   clearTimespaceRingEntities();
-  const valid = routes.filter((r) => Number.isFinite(Number(r?.origin_lon)) && Number.isFinite(Number(r?.origin_lat)));
+  const valid = routes.filter((r) =>
+    Number.isFinite(Number(r?.origin_lon)) &&
+    Number.isFinite(Number(r?.origin_lat)) &&
+    Number.isFinite(Number(r?.duration_s)),
+  );
   if (!valid.length) return;
 
+  const minDurationS = valid.reduce((m, r) => Math.min(m, Number(r.duration_s || m)), Number.POSITIVE_INFINITY);
   const maxDurationS = valid.reduce((m, r) => Math.max(m, Number(r.duration_s || 0)), 1);
-  const halfLat = (cellM / 2000) / 110.574;
 
+  // 1) 真实数据网格：每个网格中心点都来自百度算路结果，不再插值推算。
+  const halfLat = (cellM / 2000) / 110.574;
   for (const r of valid) {
-    const lon = Number(r?.origin_lon);
-    const lat = Number(r?.origin_lat);
-    const color = colorForTravelDuration(Number(r.duration_s || 0), maxDurationS);
+    const lon = Number(r.origin_lon);
+    const lat = Number(r.origin_lat);
+    const durationS = Number(r.duration_s || 0);
+    const color = colorForTravelDuration(durationS, minDurationS, maxDurationS);
     const halfLon = kmToLonDelta(cellM / 2000, lat);
     const polygon = Cesium.Cartesian3.fromDegreesArray([
       lon - halfLon, lat - halfLat,
@@ -1444,12 +1482,17 @@ function renderTimespaceHeatAndRings(center, routes, cellM) {
         hierarchy: polygon,
         material: color,
         outline: true,
-        outlineWidth: 1,
-        outlineColor: Cesium.Color.fromCssColorString("#2f4858").withAlpha(0.22),
+        outlineWidth: 0.8,
+        outlineColor: Cesium.Color.fromCssColorString("#1b3d4d").withAlpha(0.15),
+      },
+      properties: {
+        duration_s: durationS,
+        duration_min: Number((durationS / 60).toFixed(1)),
       },
     }));
   }
 
+  // 2) 同心等时圈：按样本半径估算，增强可读性
   [15, 30, 45, 60].forEach((min, idx) => {
     const thresholdS = min * 60;
     const bucket = valid.filter((r) => Number(r.duration_s || 0) <= thresholdS);
@@ -1466,16 +1509,20 @@ function renderTimespaceHeatAndRings(center, routes, cellM) {
         semiMinorAxis: radiusM,
         material: Cesium.Color.TRANSPARENT,
         outline: true,
-        outlineWidth: 2.2,
-        outlineColor: Cesium.Color.fromCssColorString("#cf6f55").withAlpha(0.72),
+        outlineWidth: 2,
+        outlineColor: Cesium.Color.fromCssColorString("#2a8f96").withAlpha(0.7),
       },
+    }));
+    const labelLat = center.lat + radiusM / 110574;
+    timespaceEntities.push(viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(center.lon, labelLat, 0),
       label: {
         text: `${min} 分钟`,
         font: "12px sans-serif",
         fillColor: Cesium.Color.fromCssColorString("#f3dfc2"),
         showBackground: true,
-        backgroundColor: Cesium.Color.fromCssColorString("#3a2b1f").withAlpha(0.75),
-        pixelOffset: new Cesium.Cartesian2(0, -14 - idx * 2),
+        backgroundColor: Cesium.Color.fromCssColorString("#3a2b1f").withAlpha(0.7),
+        pixelOffset: new Cesium.Cartesian2(0, -10 - idx * 2),
       },
     }));
   });
@@ -1532,29 +1579,25 @@ async function runGenerateTimespaceRing() {
   try {
     let effectiveCellM = cellM;
     let points = buildCircleGridPoints(center, radiusKm, effectiveCellM);
-    if (points.length > 90) {
-      const scale = Math.sqrt(points.length / 90);
+    if (points.length > 600) {
+      const scale = Math.sqrt(points.length / 600);
       effectiveCellM = Math.max(100, Math.round(cellM * scale));
       points = buildCircleGridPoints(center, radiusKm, effectiveCellM);
     }
-    const sampled = points.slice(0, 90);
-    const data = await postJsonWithFallback(
-      ["/api/routing/baidu/matrix", "http://localhost:3001/api/routing/baidu/matrix"],
-      {
-        mode: "driving",
-        coord_type: "wgs84",
-        destination: center,
-        origins: sampled.map((p, i) => ({ id: `g${i}`, name: `样本${i + 1}`, lon: p.lon, lat: p.lat })),
+    const routes = await fetchMatrixRoutesByBatches(
+      center,
+      points.map((p) => ({ id: p.id, name: `网格-${p.row}-${p.col}`, lon: p.lon, lat: p.lat })),
+      (current, total, count) => {
+        setTimespaceRingStatus(`交通时空圈生成中...第 ${current}/${total} 批（${count} 个网格）`);
       },
     );
-    const routes = Array.isArray(data?.routes) ? data.routes : [];
     if (!routes.length) {
       clearTimespaceRingEntities();
       setTimespaceRingStatus("未检索到有效算路结果，请调大半径或稍后重试", true);
       return;
     }
     renderTimespaceHeatAndRings(center, routes, effectiveCellM);
-    setTimespaceRingStatus(`已生成：${routes.length} 个网格样本（网格 ${effectiveCellM}m）`);
+    setTimespaceRingStatus(`已生成：${routes.length} 个真实网格（网格 ${effectiveCellM}m，百度算路数据）`);
   } catch (e) {
     setTimespaceRingStatus(`生成失败：${e?.message || e}`, true);
   }
