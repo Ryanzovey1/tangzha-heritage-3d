@@ -231,11 +231,22 @@ async function ensureAuthenticated() {
   });
 }
 
-const currentUser = await ensureAuthenticated();
+let currentUser = await ensureAuthenticated();
+if (!currentUser?.role) {
+  const token = localStorage.getItem("access_token");
+  if (token) {
+    try {
+      const meResp = await fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } });
+      if (meResp.ok) currentUser = await meResp.json();
+    } catch {
+      /* ignore */
+    }
+  }
+}
 await initHeritageData();
 
 // 如果是管理员，动态加载管理面板
-if (currentUser?.role === "admin") {
+if (String(currentUser?.role || "").toLowerCase() === "admin") {
   try {
     const mod = await import("./admin.js");
     mod.initAdmin(currentUser);
