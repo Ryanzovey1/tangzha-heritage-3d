@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>唐闸古镇工业遗存三维展示系统</title>
+  </head>
+  <body>
+    <div id="login-shell" class="login-shell" aria-labelledby="login-title">
+      <div class="login-card">
+        <h1 id="login-title" class="login-title">唐闸古镇工业遗存三维展示系统</h1>
+        <p class="login-sub">请先登录后进入主界面（需已启动后端 API）</p>
+        <form id="gate-login-form" class="login-form">
+          <label class="field">
+            <span>用户名</span>
+            <input id="gate-auth-user" name="username" type="text" autocomplete="username" required placeholder="admin1 或 editor1" />
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input id="gate-auth-pass" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit" id="gate-auth-login" class="btn login-submit">进入系统</button>
+        </form>
+        <p id="gate-auth-error" class="login-error" role="alert"></p>
+        <p class="login-hint">开发环境默认账号见种子脚本；API：<code>npm run server</code></p>
+      </div>
+    </div>
+
+    <div id="app" class="hidden">
+      <aside class="sidebar">
+        <header class="sidebar__head">
+          <h1>遗存目录</h1>
+        </header>
+
+        <details class="mod" open>
+          <summary>遗存目录</summary>
+          <ul id="site-list" class="site-list"></ul>
+        </details>
+
+        <details class="mod" open>
+          <summary>基础地理与底图</summary>
+          <label class="field">
+            <span>底图</span>
+            <select id="basemap">
+              <option value="osm" selected>OpenStreetMap</option>
+              <option value="gaode">高德地图</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>3D Tiles（tileset.json）</span>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+              <input id="tiles-dir-input" type="text" placeholder="D:\\school\\毕业论文\\code\\Export" style="width:100%;" />
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button id="btn-set-tiles-dir" type="button" class="btn btn--ghost" style="padding:6px 10px">设置目录</button>
+                <button id="btn-load-tiles" type="button" class="btn btn--ghost" style="padding:6px 10px">加载 3D Tiles</button>
+                <button id="btn-fly-tiles" type="button" class="btn btn--ghost" style="padding:6px 10px">飞到 3D Tiles</button>
+              </div>
+            </div>
+            <div id="tiles-source-status" style="margin-top:6px;color:var(--muted);font-size:0.78rem">默认目录：/3d-tiles/tileset.json</div>
+          </label>
+          <label class="field">
+            <span>批量算路到 3D Tiles 中心</span>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+              <button id="btn-batch-route-tiles" type="button" class="btn btn--ghost" style="padding:6px 10px">执行批量算路</button>
+            </div>
+            <div id="batch-route-status" style="margin-top:6px;color:var(--muted);font-size:0.78rem">未执行</div>
+            <div id="batch-route-results" style="margin-top:6px;max-height:120px;overflow:auto;font-size:0.78rem;color:var(--text-secondary)"></div>
+          </label>
+          <label class="field">
+            <span>交通时空圈</span>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:6px;">
+                <span>半径(km)</span>
+                <input id="timespace-radius-km" type="number" min="5" max="80" step="1" value="40" style="width:80px;" />
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;">
+                <span>网格(m)</span>
+                <input id="timespace-cell-m" type="number" min="100" max="5000" step="50" value="1000" style="width:80px;" />
+              </label>
+              <button id="btn-generate-timespace-ring" type="button" class="btn btn--ghost" style="padding:6px 10px">生成时空圈</button>
+              <button id="btn-clear-timespace-ring" type="button" class="btn btn--ghost" style="padding:6px 10px">清除时空圈</button>
+            </div>
+            <div id="timespace-ring-status" style="margin-top:6px;color:var(--muted);font-size:0.78rem">未生成</div>
+          </label>
+          <label class="field">
+            <span>周边商业设施检索（百度 Place）</span>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:6px;">
+                <span>半径(km)</span>
+                <input id="commercial-radius-km" type="number" min="0.1" max="30" step="0.1" value="2" style="width:90px;" />
+              </label>
+              <button id="btn-search-commercial" type="button" class="btn btn--ghost" style="padding:6px 10px">检索商业设施</button>
+            </div>
+            <div id="commercial-status" style="margin-top:6px;color:var(--muted);font-size:0.78rem">未检索</div>
+            <div id="commercial-results" style="margin-top:6px;max-height:140px;overflow:auto;font-size:0.78rem;color:var(--text-secondary)"></div>
+          </label>
+        </details>
+
+        <details class="mod" open>
+          <summary>图层与符号</summary>
+          <section class="layers">
+            <label class="check"><input type="checkbox" id="layer-points" checked /> 遗存点位</label>
+            <label class="check"><input type="checkbox" id="layer-category-color" checked /> 按类型唯一值着色</label>
+            <label class="check"><input type="checkbox" id="layer-labels" checked /> 名称标注</label>
+            <!-- Cesium World Terrain 已移除 -->
+          </section>
+        </details>
+
+        <details class="mod" open>
+          <summary>遗存信息检索</summary>
+          <div class="filters">
+            <label class="field field--inline">
+              <span>年代</span>
+              <select id="filter-era"></select>
+            </label>
+            <label class="field field--inline">
+              <span>类型</span>
+              <select id="filter-category"></select>
+            </label>
+          </div>
+          <label class="field">
+            <span>关键词</span>
+            <input id="search" type="search" placeholder="名称、地址或简介" autocomplete="off" />
+          </label>
+        </details>
+
+        <!-- 遗存名录已上移到侧栏顶部 -->
+
+      </aside>
+
+      <main class="map-wrap">
+        <div class="map-topbar">
+          <div class="map-topbar__brand">
+            <div class="map-topbar__seal">唐闸</div>
+            <div class="map-topbar__titles">
+              <div class="map-topbar__title">唐闸古镇工业遗存三维展示平台</div>
+              <div class="map-topbar__subtitle">运河脉络 · 近代工业 · 古镇风貌</div>
+            </div>
+          </div>
+          <div class="map-topbar__actions">
+            <button type="button" id="btn-top-admin" class="btn btn--ghost btn--small hidden">管理面板</button>
+            <button type="button" id="btn-top-logout" class="btn btn--ghost btn--small">退出登录</button>
+          </div>
+        </div>
+        <div class="map-search-strip">
+          <input id="map-search-top" type="text" placeholder="名称、地址或遗存简介" />
+          <label class="map-search-strip__history">
+            <span>历史时间（1930）</span>
+            <input id="history-year" type="range" min="1900" max="2025" value="1930" />
+          </label>
+        </div>
+        <div id="cesiumContainer"></div>
+        <div id="status-bar" class="status-bar" aria-live="polite">
+          <span id="status-coords">经度 —°　纬度 —°　高程 — m</span>
+        </div>
+        <div id="info-panel" class="info-panel hidden" role="dialog">
+          <button type="button" id="info-close" class="info-panel__close" aria-label="关闭">×</button>
+          <h3 id="info-title"></h3>
+          <div class="info-pane">
+            <img id="info-image" class="info-image hidden" alt="遗存图片" />
+            <p id="info-address" class="info-address"></p>
+            <p id="info-protection" class="info-protection"></p>
+            <p id="info-notes" class="info-notes hidden"></p>
+            <p id="info-era" class="info-era"></p>
+            <p id="info-category" class="info-category hidden"></p>
+            <p id="info-body" class="info-body"></p>
+          </div>
+        </div>
+        <div class="map-bottombar">
+          <button type="button" id="btn-reset-view" class="btn btn--ghost btn--small">重置视角</button>
+          <button type="button" id="btn-prev-view" class="btn btn--ghost btn--small">上一视图</button>
+          <button type="button" id="btn-next-view" class="btn btn--ghost btn--small">下一视图</button>
+          <button type="button" id="btn-tour" class="btn btn--ghost btn--small">自动漫游</button>
+          <button type="button" id="btn-stop-tour" class="btn btn--ghost btn--small hidden">停止漫游</button>
+          <button type="button" id="btn-clear-measure" class="btn btn--ghost btn--small">清除</button>
+          <button type="button" id="btn-measure" class="btn btn--ghost btn--small">测距</button>
+          <button type="button" id="btn-measure-area" class="btn btn--ghost btn--small">测面积</button>
+          <button type="button" id="btn-measure-area-done" class="btn btn--ghost btn--small" disabled>完成面积</button>
+        </div>
+        <div id="measure-hint" class="toast hidden"></div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

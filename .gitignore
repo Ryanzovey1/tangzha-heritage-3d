@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+server/.env
+*.log
+.DS_Store
+_开题报告_extracted.txt
+_docx_search.txt
+src/assets/demo/*.mp4
